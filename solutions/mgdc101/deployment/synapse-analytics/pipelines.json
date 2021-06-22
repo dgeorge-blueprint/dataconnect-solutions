@@ -1,0 +1,3879 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {},
+    "variables": {},
+    "resources": [
+        {
+            "name": "End2End_Mgdc101Pipeline",
+            "properties": {
+                "activities": [
+                    {
+                        "name": "Users_M365ToJson",
+                        "type": "ExecutePipeline",
+                        "dependsOn": [],
+                        "userProperties": [],
+                        "typeProperties": {
+                            "pipeline": {
+                                "referenceName": "M365UserProfileToBlob",
+                                "type": "PipelineReference"
+                            },
+                            "waitOnCompletion": true
+                        }
+                    },
+                    {
+                        "name": "Users_JsonToParquet",
+                        "type": "ExecutePipeline",
+                        "dependsOn": [
+                            {
+                                "activity": "Users_M365ToJson",
+                                "dependencyConditions": [
+                                    "Succeeded"
+                                ]
+                            }
+                        ],
+                        "userProperties": [],
+                        "typeProperties": {
+                            "pipeline": {
+                                "referenceName": "Users_JSON_to_Parquet",
+                                "type": "PipelineReference"
+                            },
+                            "waitOnCompletion": true
+                        }
+                    },
+                    {
+                        "name": "Emails_M365ToJson",
+                        "type": "ExecutePipeline",
+                        "dependsOn": [],
+                        "userProperties": [],
+                        "typeProperties": {
+                            "pipeline": {
+                                "referenceName": "M365EmailsToBlob",
+                                "type": "PipelineReference"
+                            },
+                            "waitOnCompletion": true
+                        }
+                    },
+                    {
+                        "name": "CopyAugmentedEmailsToTable",
+                        "type": "ExecutePipeline",
+                        "dependsOn": [
+                            {
+                                "activity": "CopyEmailsToTable",
+                                "dependencyConditions": [
+                                    "Succeeded"
+                                ]
+                            },
+                            {
+                                "activity": "CopyUsersToTable",
+                                "dependencyConditions": [
+                                    "Succeeded"
+                                ]
+                            }
+                        ],
+                        "userProperties": [],
+                        "typeProperties": {
+                            "pipeline": {
+                                "referenceName": "CopyAugmentedEmailsToTable",
+                                "type": "PipelineReference"
+                            },
+                            "waitOnCompletion": true,
+                            "parameters": {
+                                "augmented_emails_table_name": {
+                                    "value": "@variables('augmented_emails_table_name')",
+                                    "type": "Expression"
+                                },
+                                "emails_table_name": {
+                                    "value": "@variables('emails_table_name')",
+                                    "type": "Expression"
+                                },
+                                "users_table_name": {
+                                    "value": "@variables('users_table_name')",
+                                    "type": "Expression"
+                                }
+                            }
+                        }
+                    },
+                    {
+                        "name": "CopyEmailsToTable",
+                        "type": "ExecutePipeline",
+                        "dependsOn": [
+                            {
+                                "activity": "Emails_JsonToParquet_AllReceivers",
+                                "dependencyConditions": [
+                                    "Succeeded"
+                                ]
+                            }
+                        ],
+                        "userProperties": [],
+                        "typeProperties": {
+                            "pipeline": {
+                                "referenceName": "CopyEmailsToTable",
+                                "type": "PipelineReference"
+                            },
+                            "waitOnCompletion": true,
+                            "parameters": {
+                                "emails_table_name": {
+                                    "value": "@variables('emails_table_name')",
+                                    "type": "Expression"
+                                }
+                            }
+                        }
+                    },
+                    {
+                        "name": "CopyUsersToTable",
+                        "type": "ExecutePipeline",
+                        "dependsOn": [
+                            {
+                                "activity": "Users_JsonToParquet",
+                                "dependencyConditions": [
+                                    "Succeeded"
+                                ]
+                            }
+                        ],
+                        "userProperties": [],
+                        "typeProperties": {
+                            "pipeline": {
+                                "referenceName": "CopyUsersToTable",
+                                "type": "PipelineReference"
+                            },
+                            "waitOnCompletion": true,
+                            "parameters": {
+                                "users_table_name": {
+                                    "value": "@variables('users_table_name')",
+                                    "type": "Expression"
+                                }
+                            }
+                        }
+                    },
+                    {
+                        "name": "Emails_JsonToParquet_AllReceivers",
+                        "type": "ExecutePipeline",
+                        "dependsOn": [
+                            {
+                                "activity": "Emails_M365ToJson",
+                                "dependencyConditions": [
+                                    "Succeeded"
+                                ]
+                            }
+                        ],
+                        "userProperties": [],
+                        "typeProperties": {
+                            "pipeline": {
+                                "referenceName": "Emails_JsonToParquet_AllReceivers",
+                                "type": "PipelineReference"
+                            },
+                            "waitOnCompletion": true
+                        }
+                    }
+                ],
+                "variables": {
+                    "users_table_name": {
+                        "type": "String",
+                        "defaultValue": "m365_users_bpcs"
+                    },
+                    "emails_table_name": {
+                        "type": "String",
+                        "defaultValue": "m365_emails_bpcs"
+                    },
+                    "augmented_emails_table_name": {
+                        "type": "String",
+                        "defaultValue": "augmented_emails_bpcs"
+                    }
+                },
+                "annotations": [],
+                "lastPublishTime": "2021-06-22T12:43:13Z"
+            },
+            "type": "Microsoft.Synapse/workspaces/pipelines"
+        },
+        {
+            "name": "M365UserProfileToBlob",
+            "properties": {
+                "activities": [
+                    {
+                        "name": "copyM365UserProfileToBlob",
+                        "type": "Copy",
+                        "dependsOn": [],
+                        "policy": {
+                            "timeout": "7.00:00:00",
+                            "retry": 0,
+                            "retryIntervalInSeconds": 30,
+                            "secureOutput": false,
+                            "secureInput": false
+                        },
+                        "userProperties": [],
+                        "typeProperties": {
+                            "source": {
+                                "type": "Office365Source",
+                                "allowedGroups": [
+                                    "c9d2f6bb-b868-47f9-b6ec-71e4a5748a21"
+                                ],
+                                "outputColumns": [
+                                    {
+                                        "name": "aboutMe"
+                                    },
+                                    {
+                                        "name": "accountEnabled"
+                                    },
+                                    {
+                                        "name": "ageGroup"
+                                    },
+                                    {
+                                        "name": "assignedLicenses"
+                                    },
+                                    {
+                                        "name": "assignedPlans"
+                                    },
+                                    {
+                                        "name": "birthday"
+                                    },
+                                    {
+                                        "name": "businessPhones"
+                                    },
+                                    {
+                                        "name": "city"
+                                    },
+                                    {
+                                        "name": "companyName"
+                                    },
+                                    {
+                                        "name": "consentProvidedForMinor"
+                                    },
+                                    {
+                                        "name": "country"
+                                    },
+                                    {
+                                        "name": "createdDateTime"
+                                    },
+                                    {
+                                        "name": "department"
+                                    },
+                                    {
+                                        "name": "displayName"
+                                    },
+                                    {
+                                        "name": "givenName"
+                                    },
+                                    {
+                                        "name": "hireDate"
+                                    },
+                                    {
+                                        "name": "id"
+                                    },
+                                    {
+                                        "name": "imAddresses"
+                                    },
+                                    {
+                                        "name": "interests"
+                                    },
+                                    {
+                                        "name": "jobTitle"
+                                    },
+                                    {
+                                        "name": "legalAgeGroupClassification"
+                                    },
+                                    {
+                                        "name": "mail"
+                                    },
+                                    {
+                                        "name": "mailNickname"
+                                    },
+                                    {
+                                        "name": "mobilePhone"
+                                    },
+                                    {
+                                        "name": "mySite"
+                                    },
+                                    {
+                                        "name": "officeLocation"
+                                    },
+                                    {
+                                        "name": "onPremisesImmutableId"
+                                    },
+                                    {
+                                        "name": "onPremisesLastSyncDateTime"
+                                    },
+                                    {
+                                        "name": "onPremisesSecurityIdentifier"
+                                    },
+                                    {
+                                        "name": "onPremisesSyncEnabled"
+                                    },
+                                    {
+                                        "name": "passwordPolicies"
+                                    },
+                                    {
+                                        "name": "pastProjects"
+                                    },
+                                    {
+                                        "name": "postalCode"
+                                    },
+                                    {
+                                        "name": "preferredLanguage"
+                                    },
+                                    {
+                                        "name": "preferredName"
+                                    },
+                                    {
+                                        "name": "provisionedPlans"
+                                    },
+                                    {
+                                        "name": "proxyAddresses"
+                                    },
+                                    {
+                                        "name": "responsibilities"
+                                    },
+                                    {
+                                        "name": "schools"
+                                    },
+                                    {
+                                        "name": "skills"
+                                    },
+                                    {
+                                        "name": "state"
+                                    },
+                                    {
+                                        "name": "streetAddress"
+                                    },
+                                    {
+                                        "name": "surname"
+                                    },
+                                    {
+                                        "name": "usageLocation"
+                                    },
+                                    {
+                                        "name": "userPrincipalName"
+                                    },
+                                    {
+                                        "name": "userType"
+                                    }
+                                ]
+                            },
+                            "sink": {
+                                "type": "BinarySink",
+                                "storeSettings": {
+                                    "type": "AzureBlobStorageWriteSettings"
+                                }
+                            },
+                            "enableStaging": false
+                        },
+                        "inputs": [
+                            {
+                                "referenceName": "M365_User_Profile",
+                                "type": "DatasetReference"
+                            }
+                        ],
+                        "outputs": [
+                            {
+                                "referenceName": "M365UserProfileBlob",
+                                "type": "DatasetReference"
+                            }
+                        ]
+                    }
+                ],
+                "annotations": [],
+                "lastPublishTime": "2021-06-17T06:50:20Z"
+            },
+            "type": "Microsoft.Synapse/workspaces/pipelines"
+        },
+        {
+            "name": "M365EmailsToBlob",
+            "properties": {
+                "activities": [
+                    {
+                        "name": "copyM365EmailsToBlob",
+                        "type": "Copy",
+                        "dependsOn": [],
+                        "policy": {
+                            "timeout": "7.00:00:00",
+                            "retry": 0,
+                            "retryIntervalInSeconds": 30,
+                            "secureOutput": false,
+                            "secureInput": false
+                        },
+                        "userProperties": [],
+                        "typeProperties": {
+                            "source": {
+                                "type": "Office365Source",
+                                "dateFilterColumn": "ReceivedDateTime",
+                                "startTime": "2021-02-01T00:00:00Z",
+                                "endTime": "2021-06-23T00:00:00Z",
+                                "allowedGroups": [
+                                    "c9d2f6bb-b868-47f9-b6ec-71e4a5748a21"
+                                ],
+                                "outputColumns": [
+                                    {
+                                        "name": "ReceivedDateTime"
+                                    },
+                                    {
+                                        "name": "SentDateTime"
+                                    },
+                                    {
+                                        "name": "HasAttachments"
+                                    },
+                                    {
+                                        "name": "InternetMessageId"
+                                    },
+                                    {
+                                        "name": "Subject"
+                                    },
+                                    {
+                                        "name": "Importance"
+                                    },
+                                    {
+                                        "name": "ParentFolderId"
+                                    },
+                                    {
+                                        "name": "Sender"
+                                    },
+                                    {
+                                        "name": "From"
+                                    },
+                                    {
+                                        "name": "ToRecipients"
+                                    },
+                                    {
+                                        "name": "CcRecipients"
+                                    },
+                                    {
+                                        "name": "BccRecipients"
+                                    },
+                                    {
+                                        "name": "ReplyTo"
+                                    },
+                                    {
+                                        "name": "ConversationId"
+                                    },
+                                    {
+                                        "name": "UniqueBody"
+                                    },
+                                    {
+                                        "name": "IsDeliveryReceiptRequested"
+                                    },
+                                    {
+                                        "name": "IsReadReceiptRequested"
+                                    },
+                                    {
+                                        "name": "IsRead"
+                                    },
+                                    {
+                                        "name": "IsDraft"
+                                    },
+                                    {
+                                        "name": "WebLink"
+                                    },
+                                    {
+                                        "name": "CreatedDateTime"
+                                    },
+                                    {
+                                        "name": "LastModifiedDateTime"
+                                    },
+                                    {
+                                        "name": "ChangeKey"
+                                    },
+                                    {
+                                        "name": "Categories"
+                                    },
+                                    {
+                                        "name": "Id"
+                                    },
+                                    {
+                                        "name": "Attachments"
+                                    }
+                                ]
+                            },
+                            "sink": {
+                                "type": "BinarySink",
+                                "storeSettings": {
+                                    "type": "AzureBlobStorageWriteSettings"
+                                }
+                            },
+                            "enableStaging": false
+                        },
+                        "inputs": [
+                            {
+                                "referenceName": "M365_Emails",
+                                "type": "DatasetReference"
+                            }
+                        ],
+                        "outputs": [
+                            {
+                                "referenceName": "M365EmailsBlob",
+                                "type": "DatasetReference"
+                            }
+                        ]
+                    }
+                ],
+                "annotations": [],
+                "lastPublishTime": "2021-06-22T12:10:22Z"
+            },
+            "type": "Microsoft.Synapse/workspaces/pipelines"
+        },
+        {
+            "name": "Users_JSON_to_Parquet",
+            "properties": {
+                "activities": [
+                    {
+                        "name": "Copy_Users_JSON_to_Parquet",
+                        "type": "Copy",
+                        "dependsOn": [],
+                        "policy": {
+                            "timeout": "7.00:00:00",
+                            "retry": 0,
+                            "retryIntervalInSeconds": 30,
+                            "secureOutput": false,
+                            "secureInput": false
+                        },
+                        "userProperties": [],
+                        "typeProperties": {
+                            "source": {
+                                "type": "JsonSource",
+                                "storeSettings": {
+                                    "type": "AzureBlobStorageReadSettings",
+                                    "recursive": true,
+                                    "wildcardFolderPath": "m365_users_json",
+                                    "wildcardFileName": "*",
+                                    "enablePartitionDiscovery": false
+                                },
+                                "formatSettings": {
+                                    "type": "JsonReadSettings"
+                                }
+                            },
+                            "sink": {
+                                "type": "ParquetSink",
+                                "storeSettings": {
+                                    "type": "AzureBlobStorageWriteSettings"
+                                },
+                                "formatSettings": {
+                                    "type": "ParquetWriteSettings"
+                                }
+                            },
+                            "enableStaging": false,
+                            "translator": {
+                                "type": "TabularTranslator",
+                                "mappings": [
+                                    {
+                                        "source": {
+                                            "path": "$['aboutMe']"
+                                        },
+                                        "sink": {
+                                            "name": "aboutMe",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['birthday']"
+                                        },
+                                        "sink": {
+                                            "name": "birthday",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['hireDate']"
+                                        },
+                                        "sink": {
+                                            "name": "hireDate",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['interests']"
+                                        },
+                                        "sink": {
+                                            "name": "interests",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['mySite']"
+                                        },
+                                        "sink": {
+                                            "name": "mySite",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['pastProjects']"
+                                        },
+                                        "sink": {
+                                            "name": "pastProjects",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['preferredName']"
+                                        },
+                                        "sink": {
+                                            "name": "preferredName",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['responsibilities']"
+                                        },
+                                        "sink": {
+                                            "name": "responsibilities",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['schools']"
+                                        },
+                                        "sink": {
+                                            "name": "schools",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['skills']"
+                                        },
+                                        "sink": {
+                                            "name": "skills",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['accountEnabled']"
+                                        },
+                                        "sink": {
+                                            "name": "accountEnabled",
+                                            "type": "Boolean"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['city']"
+                                        },
+                                        "sink": {
+                                            "name": "city",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['companyName']"
+                                        },
+                                        "sink": {
+                                            "name": "companyName",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['country']"
+                                        },
+                                        "sink": {
+                                            "name": "country",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['createdDateTime']"
+                                        },
+                                        "sink": {
+                                            "name": "createdDateTime",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['department']"
+                                        },
+                                        "sink": {
+                                            "name": "department",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['displayName']"
+                                        },
+                                        "sink": {
+                                            "name": "displayName",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['givenName']"
+                                        },
+                                        "sink": {
+                                            "name": "givenName",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['id']"
+                                        },
+                                        "sink": {
+                                            "name": "id",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['jobTitle']"
+                                        },
+                                        "sink": {
+                                            "name": "jobTitle",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['mail']"
+                                        },
+                                        "sink": {
+                                            "name": "mail",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['officeLocation']"
+                                        },
+                                        "sink": {
+                                            "name": "officeLocation",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['onPremisesImmutableId']"
+                                        },
+                                        "sink": {
+                                            "name": "onPremisesImmutableId",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['postalCode']"
+                                        },
+                                        "sink": {
+                                            "name": "postalCode",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['preferredLanguage']"
+                                        },
+                                        "sink": {
+                                            "name": "preferredLanguage",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['state']"
+                                        },
+                                        "sink": {
+                                            "name": "state",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['streetAddress']"
+                                        },
+                                        "sink": {
+                                            "name": "streetAddress",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['surname']"
+                                        },
+                                        "sink": {
+                                            "name": "surname",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['usageLocation']"
+                                        },
+                                        "sink": {
+                                            "name": "usageLocation",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['userPrincipalName']"
+                                        },
+                                        "sink": {
+                                            "name": "userPrincipalName",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['userType']"
+                                        },
+                                        "sink": {
+                                            "name": "userType",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['puser']"
+                                        },
+                                        "sink": {
+                                            "name": "puser",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['ptenant']"
+                                        },
+                                        "sink": {
+                                            "name": "ptenant",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['pAdditionalInfo']"
+                                        },
+                                        "sink": {
+                                            "name": "pAdditionalInfo",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['datarow']"
+                                        },
+                                        "sink": {
+                                            "name": "datarow",
+                                            "type": "Int64"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['userrow']"
+                                        },
+                                        "sink": {
+                                            "name": "userrow",
+                                            "type": "Int64"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['pagerow']"
+                                        },
+                                        "sink": {
+                                            "name": "pagerow",
+                                            "type": "Int64"
+                                        }
+                                    }
+                                ],
+                                "collectionReference": "",
+                                "mapComplexValuesToString": true
+                            }
+                        },
+                        "inputs": [
+                            {
+                                "referenceName": "M365UsersProfileJson",
+                                "type": "DatasetReference"
+                            }
+                        ],
+                        "outputs": [
+                            {
+                                "referenceName": "RawUsersParquet",
+                                "type": "DatasetReference"
+                            }
+                        ]
+                    }
+                ],
+                "annotations": [],
+                "lastPublishTime": "2021-06-17T12:59:03Z"
+            },
+            "type": "Microsoft.Synapse/workspaces/pipelines"
+        },
+        {
+            "name": "Emails_JsonToParquet_AllReceivers",
+            "properties": {
+                "activities": [
+                    {
+                        "name": "Json2Parquet_Flatten_To_Recipients",
+                        "type": "Copy",
+                        "dependsOn": [],
+                        "policy": {
+                            "timeout": "7.00:00:00",
+                            "retry": 0,
+                            "retryIntervalInSeconds": 30,
+                            "secureOutput": false,
+                            "secureInput": false
+                        },
+                        "userProperties": [],
+                        "typeProperties": {
+                            "source": {
+                                "type": "JsonSource",
+                                "storeSettings": {
+                                    "type": "AzureBlobStorageReadSettings",
+                                    "recursive": true,
+                                    "wildcardFolderPath": "m365_emails_json",
+                                    "wildcardFileName": "*",
+                                    "enablePartitionDiscovery": false
+                                },
+                                "formatSettings": {
+                                    "type": "JsonReadSettings"
+                                }
+                            },
+                            "sink": {
+                                "type": "ParquetSink",
+                                "storeSettings": {
+                                    "type": "AzureBlobStorageWriteSettings",
+                                    "copyBehavior": "MergeFiles"
+                                },
+                                "formatSettings": {
+                                    "type": "ParquetWriteSettings"
+                                }
+                            },
+                            "enableStaging": false,
+                            "translator": {
+                                "type": "TabularTranslator",
+                                "mappings": [
+                                    {
+                                        "source": {
+                                            "path": "['EmailAddress']['Address']"
+                                        },
+                                        "sink": {
+                                            "name": "Recipient",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['Id']"
+                                        },
+                                        "sink": {
+                                            "name": "Id",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['CreatedDateTime']"
+                                        },
+                                        "sink": {
+                                            "name": "CreatedDateTime",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['LastModifiedDateTime']"
+                                        },
+                                        "sink": {
+                                            "name": "LastModifiedDateTime",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['InternetMessageId']"
+                                        },
+                                        "sink": {
+                                            "name": "InternetMessageId",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['Subject']"
+                                        },
+                                        "sink": {
+                                            "name": "Subject",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['IsReadReceiptRequested']"
+                                        },
+                                        "sink": {
+                                            "name": "IsReadReceiptRequested",
+                                            "type": "Boolean"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['IsRead']"
+                                        },
+                                        "sink": {
+                                            "name": "IsRead",
+                                            "type": "Boolean"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['IsDraft']"
+                                        },
+                                        "sink": {
+                                            "name": "IsDraft",
+                                            "type": "Boolean"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['WebLink']"
+                                        },
+                                        "sink": {
+                                            "name": "WebLink",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['Sender']['EmailAddress']['Name']"
+                                        },
+                                        "sink": {
+                                            "name": "Sender_Name",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['Sender']['EmailAddress']['Address']"
+                                        },
+                                        "sink": {
+                                            "name": "Sender",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['From']['EmailAddress']['Name']"
+                                        },
+                                        "sink": {
+                                            "name": "From_Name",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['From']['EmailAddress']['Address']"
+                                        },
+                                        "sink": {
+                                            "name": "From",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['UniqueBody']['ContentType']"
+                                        },
+                                        "sink": {
+                                            "name": "ContentType",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['UniqueBody']['Content']"
+                                        },
+                                        "sink": {
+                                            "name": "Content",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['ODataType']"
+                                        },
+                                        "sink": {
+                                            "name": "ODataType",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['puser']"
+                                        },
+                                        "sink": {
+                                            "name": "puser",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['ptenant']"
+                                        },
+                                        "sink": {
+                                            "name": "ptenant",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['datarow']"
+                                        },
+                                        "sink": {
+                                            "name": "datarow",
+                                            "type": "Int64"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['userrow']"
+                                        },
+                                        "sink": {
+                                            "name": "userrow",
+                                            "type": "Int64"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['pagerow']"
+                                        },
+                                        "sink": {
+                                            "name": "pagerow",
+                                            "type": "Int64"
+                                        }
+                                    }
+                                ],
+                                "collectionReference": "$['ToRecipients']"
+                            }
+                        },
+                        "inputs": [
+                            {
+                                "referenceName": "M365EmailsJson",
+                                "type": "DatasetReference"
+                            }
+                        ],
+                        "outputs": [
+                            {
+                                "referenceName": "M365ToRecipientsEmailsParquet",
+                                "type": "DatasetReference"
+                            }
+                        ]
+                    },
+                    {
+                        "name": "Json2Parquet_Flatten_CC_Recipients",
+                        "type": "Copy",
+                        "dependsOn": [],
+                        "policy": {
+                            "timeout": "7.00:00:00",
+                            "retry": 0,
+                            "retryIntervalInSeconds": 30,
+                            "secureOutput": false,
+                            "secureInput": false
+                        },
+                        "userProperties": [],
+                        "typeProperties": {
+                            "source": {
+                                "type": "JsonSource",
+                                "storeSettings": {
+                                    "type": "AzureBlobStorageReadSettings",
+                                    "recursive": true,
+                                    "wildcardFolderPath": "m365_emails_json",
+                                    "wildcardFileName": "*",
+                                    "enablePartitionDiscovery": false
+                                },
+                                "formatSettings": {
+                                    "type": "JsonReadSettings"
+                                }
+                            },
+                            "sink": {
+                                "type": "ParquetSink",
+                                "storeSettings": {
+                                    "type": "AzureBlobStorageWriteSettings",
+                                    "copyBehavior": "MergeFiles"
+                                },
+                                "formatSettings": {
+                                    "type": "ParquetWriteSettings"
+                                }
+                            },
+                            "enableStaging": false,
+                            "translator": {
+                                "type": "TabularTranslator",
+                                "mappings": [
+                                    {
+                                        "source": {
+                                            "path": "['EmailAddress']['Address']"
+                                        },
+                                        "sink": {
+                                            "name": "Recipient",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['Id']"
+                                        },
+                                        "sink": {
+                                            "name": "Id",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['CreatedDateTime']"
+                                        },
+                                        "sink": {
+                                            "name": "CreatedDateTime",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['LastModifiedDateTime']"
+                                        },
+                                        "sink": {
+                                            "name": "LastModifiedDateTime",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['InternetMessageId']"
+                                        },
+                                        "sink": {
+                                            "name": "InternetMessageId",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['Subject']"
+                                        },
+                                        "sink": {
+                                            "name": "Subject",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['IsReadReceiptRequested']"
+                                        },
+                                        "sink": {
+                                            "name": "IsReadReceiptRequested",
+                                            "type": "Boolean"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['IsRead']"
+                                        },
+                                        "sink": {
+                                            "name": "IsRead",
+                                            "type": "Boolean"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['IsDraft']"
+                                        },
+                                        "sink": {
+                                            "name": "IsDraft",
+                                            "type": "Boolean"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['WebLink']"
+                                        },
+                                        "sink": {
+                                            "name": "WebLink",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['Sender']['EmailAddress']['Name']"
+                                        },
+                                        "sink": {
+                                            "name": "Sender_Name",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['Sender']['EmailAddress']['Address']"
+                                        },
+                                        "sink": {
+                                            "name": "Sender",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['From']['EmailAddress']['Name']"
+                                        },
+                                        "sink": {
+                                            "name": "From_Name",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['From']['EmailAddress']['Address']"
+                                        },
+                                        "sink": {
+                                            "name": "From",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['UniqueBody']['ContentType']"
+                                        },
+                                        "sink": {
+                                            "name": "ContentType",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['UniqueBody']['Content']"
+                                        },
+                                        "sink": {
+                                            "name": "Content",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['ODataType']"
+                                        },
+                                        "sink": {
+                                            "name": "ODataType",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['puser']"
+                                        },
+                                        "sink": {
+                                            "name": "puser",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['ptenant']"
+                                        },
+                                        "sink": {
+                                            "name": "ptenant",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['datarow']"
+                                        },
+                                        "sink": {
+                                            "name": "datarow",
+                                            "type": "Int64"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['userrow']"
+                                        },
+                                        "sink": {
+                                            "name": "userrow",
+                                            "type": "Int64"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['pagerow']"
+                                        },
+                                        "sink": {
+                                            "name": "pagerow",
+                                            "type": "Int64"
+                                        }
+                                    }
+                                ],
+                                "collectionReference": "$['CcRecipients']"
+                            }
+                        },
+                        "inputs": [
+                            {
+                                "referenceName": "M365EmailsJson",
+                                "type": "DatasetReference"
+                            }
+                        ],
+                        "outputs": [
+                            {
+                                "referenceName": "M365CcRecipientsEmailsParquet",
+                                "type": "DatasetReference"
+                            }
+                        ]
+                    },
+                    {
+                        "name": "Json2Parquet_Flatten_BCC_Recipients",
+                        "type": "Copy",
+                        "dependsOn": [],
+                        "policy": {
+                            "timeout": "7.00:00:00",
+                            "retry": 0,
+                            "retryIntervalInSeconds": 30,
+                            "secureOutput": false,
+                            "secureInput": false
+                        },
+                        "userProperties": [],
+                        "typeProperties": {
+                            "source": {
+                                "type": "JsonSource",
+                                "storeSettings": {
+                                    "type": "AzureBlobStorageReadSettings",
+                                    "recursive": true,
+                                    "wildcardFolderPath": "m365_emails_json",
+                                    "wildcardFileName": "*",
+                                    "enablePartitionDiscovery": false
+                                },
+                                "formatSettings": {
+                                    "type": "JsonReadSettings"
+                                }
+                            },
+                            "sink": {
+                                "type": "ParquetSink",
+                                "storeSettings": {
+                                    "type": "AzureBlobStorageWriteSettings",
+                                    "copyBehavior": "MergeFiles"
+                                },
+                                "formatSettings": {
+                                    "type": "ParquetWriteSettings"
+                                }
+                            },
+                            "enableStaging": false,
+                            "translator": {
+                                "type": "TabularTranslator",
+                                "mappings": [
+                                    {
+                                        "source": {
+                                            "path": "['EmailAddress']['Address']"
+                                        },
+                                        "sink": {
+                                            "name": "Recipient",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['Id']"
+                                        },
+                                        "sink": {
+                                            "name": "Id",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['CreatedDateTime']"
+                                        },
+                                        "sink": {
+                                            "name": "CreatedDateTime",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['LastModifiedDateTime']"
+                                        },
+                                        "sink": {
+                                            "name": "LastModifiedDateTime",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['InternetMessageId']"
+                                        },
+                                        "sink": {
+                                            "name": "InternetMessageId",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['Subject']"
+                                        },
+                                        "sink": {
+                                            "name": "Subject",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['IsReadReceiptRequested']"
+                                        },
+                                        "sink": {
+                                            "name": "IsReadReceiptRequested",
+                                            "type": "Boolean"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['IsRead']"
+                                        },
+                                        "sink": {
+                                            "name": "IsRead",
+                                            "type": "Boolean"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['IsDraft']"
+                                        },
+                                        "sink": {
+                                            "name": "IsDraft",
+                                            "type": "Boolean"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['WebLink']"
+                                        },
+                                        "sink": {
+                                            "name": "WebLink",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['Sender']['EmailAddress']['Name']"
+                                        },
+                                        "sink": {
+                                            "name": "Sender_Name",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['Sender']['EmailAddress']['Address']"
+                                        },
+                                        "sink": {
+                                            "name": "Sender",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['From']['EmailAddress']['Name']"
+                                        },
+                                        "sink": {
+                                            "name": "From_Name",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['From']['EmailAddress']['Address']"
+                                        },
+                                        "sink": {
+                                            "name": "From",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['UniqueBody']['ContentType']"
+                                        },
+                                        "sink": {
+                                            "name": "ContentType",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['UniqueBody']['Content']"
+                                        },
+                                        "sink": {
+                                            "name": "Content",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['ODataType']"
+                                        },
+                                        "sink": {
+                                            "name": "ODataType",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['puser']"
+                                        },
+                                        "sink": {
+                                            "name": "puser",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['ptenant']"
+                                        },
+                                        "sink": {
+                                            "name": "ptenant",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['datarow']"
+                                        },
+                                        "sink": {
+                                            "name": "datarow",
+                                            "type": "Int64"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['userrow']"
+                                        },
+                                        "sink": {
+                                            "name": "userrow",
+                                            "type": "Int64"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "path": "$['pagerow']"
+                                        },
+                                        "sink": {
+                                            "name": "pagerow",
+                                            "type": "Int64"
+                                        }
+                                    }
+                                ],
+                                "collectionReference": "$['BccRecipients']"
+                            }
+                        },
+                        "inputs": [
+                            {
+                                "referenceName": "M365EmailsJson",
+                                "type": "DatasetReference"
+                            }
+                        ],
+                        "outputs": [
+                            {
+                                "referenceName": "M365BccRecipientsEmailsParquet",
+                                "type": "DatasetReference"
+                            }
+                        ]
+                    }
+                ],
+                "annotations": [],
+                "lastPublishTime": "2021-06-22T15:17:40Z"
+            },
+            "type": "Microsoft.Synapse/workspaces/pipelines"
+        },
+        {
+            "name": "CopyUsersToTable",
+            "properties": {
+                "activities": [
+                    {
+                        "name": "CopyUsersToTable",
+                        "type": "Copy",
+                        "dependsOn": [],
+                        "policy": {
+                            "timeout": "7.00:00:00",
+                            "retry": 0,
+                            "retryIntervalInSeconds": 30,
+                            "secureOutput": false,
+                            "secureInput": false
+                        },
+                        "userProperties": [],
+                        "typeProperties": {
+                            "source": {
+                                "type": "ParquetSource",
+                                "storeSettings": {
+                                    "type": "AzureBlobStorageReadSettings",
+                                    "recursive": true,
+                                    "wildcardFileName": "*.parquet",
+                                    "enablePartitionDiscovery": false
+                                }
+                            },
+                            "sink": {
+                                "type": "AzureSqlSink",
+                                "preCopyScript": {
+                                    "value": "@{concat('TRUNCATE TABLE ',pipeline().parameters.users_table_name)}",
+                                    "type": "Expression"
+                                },
+                                "disableMetricsCollection": false
+                            },
+                            "enableStaging": false,
+                            "translator": {
+                                "type": "TabularTranslator",
+                                "mappings": [
+                                    {
+                                        "source": {
+                                            "name": "aboutMe",
+                                            "type": "String",
+                                            "physicalType": "UTF8"
+                                        },
+                                        "sink": {
+                                            "name": "aboutMe",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "birthday",
+                                            "type": "String",
+                                            "physicalType": "UTF8"
+                                        },
+                                        "sink": {
+                                            "name": "birthday",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "hireDate",
+                                            "type": "String",
+                                            "physicalType": "UTF8"
+                                        },
+                                        "sink": {
+                                            "name": "hireDate",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "mySite",
+                                            "type": "String",
+                                            "physicalType": "UTF8"
+                                        },
+                                        "sink": {
+                                            "name": "mySite",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "preferredName",
+                                            "type": "String",
+                                            "physicalType": "UTF8"
+                                        },
+                                        "sink": {
+                                            "name": "preferredName",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "accountEnabled",
+                                            "type": "Boolean",
+                                            "physicalType": "BOOLEAN"
+                                        },
+                                        "sink": {
+                                            "name": "accountEnabled",
+                                            "type": "Boolean",
+                                            "physicalType": "bit"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "city",
+                                            "type": "String",
+                                            "physicalType": "UTF8"
+                                        },
+                                        "sink": {
+                                            "name": "city",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "companyName",
+                                            "type": "String",
+                                            "physicalType": "UTF8"
+                                        },
+                                        "sink": {
+                                            "name": "companyName",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "country",
+                                            "type": "String",
+                                            "physicalType": "UTF8"
+                                        },
+                                        "sink": {
+                                            "name": "country",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "createdDateTime",
+                                            "type": "String",
+                                            "physicalType": "UTF8"
+                                        },
+                                        "sink": {
+                                            "name": "createdDateTime",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "department",
+                                            "type": "String",
+                                            "physicalType": "UTF8"
+                                        },
+                                        "sink": {
+                                            "name": "department",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "displayName",
+                                            "type": "String",
+                                            "physicalType": "UTF8"
+                                        },
+                                        "sink": {
+                                            "name": "displayName",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "givenName",
+                                            "type": "String",
+                                            "physicalType": "UTF8"
+                                        },
+                                        "sink": {
+                                            "name": "givenName",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "id",
+                                            "type": "String",
+                                            "physicalType": "UTF8"
+                                        },
+                                        "sink": {
+                                            "name": "id",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "jobTitle",
+                                            "type": "String",
+                                            "physicalType": "UTF8"
+                                        },
+                                        "sink": {
+                                            "name": "jobTitle",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "mail",
+                                            "type": "String",
+                                            "physicalType": "UTF8"
+                                        },
+                                        "sink": {
+                                            "name": "mail",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "officeLocation",
+                                            "type": "String",
+                                            "physicalType": "UTF8"
+                                        },
+                                        "sink": {
+                                            "name": "officeLocation",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "onPremisesImmutableId",
+                                            "type": "String",
+                                            "physicalType": "UTF8"
+                                        },
+                                        "sink": {
+                                            "name": "onPremisesImmutableId",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "postalCode",
+                                            "type": "String",
+                                            "physicalType": "UTF8"
+                                        },
+                                        "sink": {
+                                            "name": "postalCode",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "preferredLanguage",
+                                            "type": "String",
+                                            "physicalType": "UTF8"
+                                        },
+                                        "sink": {
+                                            "name": "preferredLanguage",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "state",
+                                            "type": "String",
+                                            "physicalType": "UTF8"
+                                        },
+                                        "sink": {
+                                            "name": "state",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "streetAddress",
+                                            "type": "String",
+                                            "physicalType": "UTF8"
+                                        },
+                                        "sink": {
+                                            "name": "streetAddress",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "surname",
+                                            "type": "String",
+                                            "physicalType": "UTF8"
+                                        },
+                                        "sink": {
+                                            "name": "surname",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "usageLocation",
+                                            "type": "String",
+                                            "physicalType": "UTF8"
+                                        },
+                                        "sink": {
+                                            "name": "usageLocation",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "userPrincipalName",
+                                            "type": "String",
+                                            "physicalType": "UTF8"
+                                        },
+                                        "sink": {
+                                            "name": "userPrincipalName",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "userType",
+                                            "type": "String",
+                                            "physicalType": "UTF8"
+                                        },
+                                        "sink": {
+                                            "name": "userType",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "puser",
+                                            "type": "String",
+                                            "physicalType": "UTF8"
+                                        },
+                                        "sink": {
+                                            "name": "puser",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "ptenant",
+                                            "type": "String",
+                                            "physicalType": "UTF8"
+                                        },
+                                        "sink": {
+                                            "name": "ptenant",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "pAdditionalInfo",
+                                            "type": "String",
+                                            "physicalType": "UTF8"
+                                        },
+                                        "sink": {
+                                            "name": "pAdditionalInfo",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "datarow",
+                                            "type": "Int64",
+                                            "physicalType": "INT64"
+                                        },
+                                        "sink": {
+                                            "name": "datarow",
+                                            "type": "Int64",
+                                            "physicalType": "bigint"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "userrow",
+                                            "type": "Int64",
+                                            "physicalType": "INT64"
+                                        },
+                                        "sink": {
+                                            "name": "userrow",
+                                            "type": "Int64",
+                                            "physicalType": "bigint"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "pagerow",
+                                            "type": "Int64",
+                                            "physicalType": "INT64"
+                                        },
+                                        "sink": {
+                                            "name": "pagerow",
+                                            "type": "Int64",
+                                            "physicalType": "bigint"
+                                        }
+                                    }
+                                ],
+                                "typeConversion": true,
+                                "typeConversionSettings": {
+                                    "allowDataTruncation": true,
+                                    "treatBooleanAsNumber": false
+                                }
+                            }
+                        },
+                        "inputs": [
+                            {
+                                "referenceName": "RawUsersParquet",
+                                "type": "DatasetReference"
+                            }
+                        ],
+                        "outputs": [
+                            {
+                                "referenceName": "M365UsersTableDedicatedSQLdb",
+                                "type": "DatasetReference",
+                                "parameters": {
+                                    "users_table_name": {
+                                        "value": "@pipeline().parameters.users_table_name",
+                                        "type": "Expression"
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                ],
+                "parameters": {
+                    "users_table_name": {
+                        "type": "string"
+                    }
+                },
+                "annotations": [],
+                "lastPublishTime": "2021-06-18T12:15:08Z"
+            },
+            "type": "Microsoft.Synapse/workspaces/pipelines"
+        },
+        {
+            "name": "CopyEmailsToTable",
+            "properties": {
+                "activities": [
+                    {
+                        "name": "CopyEmailsToTable",
+                        "type": "Copy",
+                        "dependsOn": [],
+                        "policy": {
+                            "timeout": "7.00:00:00",
+                            "retry": 0,
+                            "retryIntervalInSeconds": 30,
+                            "secureOutput": false,
+                            "secureInput": false
+                        },
+                        "userProperties": [],
+                        "typeProperties": {
+                            "source": {
+                                "type": "ParquetSource",
+                                "storeSettings": {
+                                    "type": "AzureBlobStorageReadSettings",
+                                    "recursive": true,
+                                    "wildcardFileName": "*.parquet",
+                                    "enablePartitionDiscovery": false
+                                }
+                            },
+                            "sink": {
+                                "type": "AzureSqlSink",
+                                "preCopyScript": {
+                                    "value": "@{concat('TRUNCATE TABLE ',pipeline().parameters.emails_table_name)}",
+                                    "type": "Expression"
+                                },
+                                "disableMetricsCollection": false
+                            },
+                            "enableStaging": false,
+                            "translator": {
+                                "type": "TabularTranslator",
+                                "mappings": [
+                                    {
+                                        "source": {
+                                            "name": "Id",
+                                            "type": "String",
+                                            "physicalType": "UTF8"
+                                        },
+                                        "sink": {
+                                            "name": "Id",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "CreatedDateTime",
+                                            "type": "String",
+                                            "physicalType": "UTF8"
+                                        },
+                                        "sink": {
+                                            "name": "CreatedDateTime",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "LastModifiedDateTime",
+                                            "type": "String",
+                                            "physicalType": "UTF8"
+                                        },
+                                        "sink": {
+                                            "name": "LastModifiedDateTime",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "InternetMessageId",
+                                            "type": "String",
+                                            "physicalType": "UTF8"
+                                        },
+                                        "sink": {
+                                            "name": "InternetMessageId",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "Subject",
+                                            "type": "String",
+                                            "physicalType": "UTF8"
+                                        },
+                                        "sink": {
+                                            "name": "Subject",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "IsReadReceiptRequested",
+                                            "type": "Boolean",
+                                            "physicalType": "BOOLEAN"
+                                        },
+                                        "sink": {
+                                            "name": "IsReadReceiptRequested",
+                                            "type": "Boolean",
+                                            "physicalType": "bit"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "IsRead",
+                                            "type": "Boolean",
+                                            "physicalType": "BOOLEAN"
+                                        },
+                                        "sink": {
+                                            "name": "IsRead",
+                                            "type": "Boolean",
+                                            "physicalType": "bit"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "IsDraft",
+                                            "type": "Boolean",
+                                            "physicalType": "BOOLEAN"
+                                        },
+                                        "sink": {
+                                            "name": "IsDraft",
+                                            "type": "Boolean",
+                                            "physicalType": "bit"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "WebLink",
+                                            "type": "String",
+                                            "physicalType": "UTF8"
+                                        },
+                                        "sink": {
+                                            "name": "WebLink",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "Sender",
+                                            "type": "String",
+                                            "physicalType": "UTF8"
+                                        },
+                                        "sink": {
+                                            "name": "Sender",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "Sender_Name",
+                                            "type": "String",
+                                            "physicalType": "UTF8"
+                                        },
+                                        "sink": {
+                                            "name": "Sender_Name",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "From",
+                                            "type": "String",
+                                            "physicalType": "UTF8"
+                                        },
+                                        "sink": {
+                                            "name": "From",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "From_Name",
+                                            "type": "String",
+                                            "physicalType": "UTF8"
+                                        },
+                                        "sink": {
+                                            "name": "From_Name",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "ContentType",
+                                            "type": "String",
+                                            "physicalType": "UTF8"
+                                        },
+                                        "sink": {
+                                            "name": "ContentType",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "Content",
+                                            "type": "String",
+                                            "physicalType": "UTF8"
+                                        },
+                                        "sink": {
+                                            "name": "Content",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "Recipient",
+                                            "type": "String",
+                                            "physicalType": "UTF8"
+                                        },
+                                        "sink": {
+                                            "name": "Recipient",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "ODataType",
+                                            "type": "String",
+                                            "physicalType": "UTF8"
+                                        },
+                                        "sink": {
+                                            "name": "ODataType",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "puser",
+                                            "type": "String",
+                                            "physicalType": "UTF8"
+                                        },
+                                        "sink": {
+                                            "name": "puser",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "ptenant",
+                                            "type": "String",
+                                            "physicalType": "UTF8"
+                                        },
+                                        "sink": {
+                                            "name": "ptenant",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "datarow",
+                                            "type": "Int64",
+                                            "physicalType": "INT64"
+                                        },
+                                        "sink": {
+                                            "name": "datarow",
+                                            "type": "Int64",
+                                            "physicalType": "bigint"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "userrow",
+                                            "type": "Int64",
+                                            "physicalType": "INT64"
+                                        },
+                                        "sink": {
+                                            "name": "userrow",
+                                            "type": "Int64",
+                                            "physicalType": "bigint"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "pagerow",
+                                            "type": "Int64",
+                                            "physicalType": "INT64"
+                                        },
+                                        "sink": {
+                                            "name": "pagerow",
+                                            "type": "Int64",
+                                            "physicalType": "bigint"
+                                        }
+                                    }
+                                ],
+                                "typeConversion": true,
+                                "typeConversionSettings": {
+                                    "allowDataTruncation": true,
+                                    "treatBooleanAsNumber": false
+                                }
+                            }
+                        },
+                        "inputs": [
+                            {
+                                "referenceName": "M365EmailsParquet",
+                                "type": "DatasetReference"
+                            }
+                        ],
+                        "outputs": [
+                            {
+                                "referenceName": "M365EmailsTableDedicatedSQLdb",
+                                "type": "DatasetReference",
+                                "parameters": {
+                                    "emails_table_name": {
+                                        "value": "@pipeline().parameters.emails_table_name",
+                                        "type": "Expression"
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                ],
+                "parameters": {
+                    "emails_table_name": {
+                        "type": "string"
+                    }
+                },
+                "annotations": [],
+                "lastPublishTime": "2021-06-18T12:20:09Z"
+            },
+            "type": "Microsoft.Synapse/workspaces/pipelines"
+        },
+        {
+            "name": "CopyAugmentedEmailsToTable",
+            "properties": {
+                "activities": [
+                    {
+                        "name": "CopyAugmentedEmailsToTable",
+                        "type": "Copy",
+                        "dependsOn": [],
+                        "policy": {
+                            "timeout": "7.00:00:00",
+                            "retry": 0,
+                            "retryIntervalInSeconds": 30,
+                            "secureOutput": false,
+                            "secureInput": false
+                        },
+                        "userProperties": [],
+                        "typeProperties": {
+                            "source": {
+                                "type": "AzureSqlSource",
+                                "sqlReaderQuery": {
+                                    "value": "@{concat('with Internal_email_domains (EmailDomain) \nAS\n(\n    SELECT DISTINCT SUBSTRING(u.mail, CHARINDEX(''@'', u.mail), LEN(u.mail)) FROM ', pipeline().parameters.users_table_name, ' u WHERE u.mail IS NOT NULL\n)\nSELECT DISTINCT \ne.Id,\ne.CreatedDateTime, \ne.LastModifiedDateTime, \ne.InternetMessageId, \ne.Subject, \ne.IsReadReceiptRequested, \ne.IsRead, \ne.IsDraft,\ne.WebLink, \ne.Sender, \ne.Sender_Name, \ne.[From],\ne.From_Name, \ne.ContentType, \ne.Content, \ne.Recipient, \ne.ODataType, \ne.puser as emai_puser, \ne.ptenant as email_ptenant, \ne.datarow as email_datarow, \ne.userrow as email_userrow, \ne.pagerow as email_pagerow, \nu.aboutMe as SenderAboutMe,  \nu.birthday as SenderBirthday,   \nu.hireDate as SenderHireDate,  \nu.mySite as SenderMySite,  \nu.preferredName as SenderPreferredName,  \nu.accountEnabled as SenderAccountEnabled,  \nu.city as SenderCity,  \nu.companyName as SenderCompanyName,   \nu.country as SenderCountry,  \nu.createdDateTime as SenderCreatedDateTime,  \nu.department as SenderDepartment,  \nu.displayName as SenderDisplayName,  \nu.givenName as SenderGivenName,  \nu.id as SenderId,  \nu.jobTitle as SenderJobTitle,  \nu.mail as SenderMail,  \nu.officeLocation as SenderOfficeLocation,  \nu.onPremisesImmutableId as SenderOnPremisesImmutableId,  \nu.postalCode as SenderPostalCode,  \nu.preferredLanguage as SenderPreferredLanguage,  \nu.state as SenderState,  \nu.streetAddress as SenderStreetAddress,  \nu.surname as SenderSurname,  \nu.usageLocation as SenderUsageLocation,  \nu.userPrincipalName as SenderUserPrincipalName,  \nu.userType as SenderUserType,  \nu.puser as SenderPuser ,  \nu.ptenant as SenderPtenant,  \nu.pAdditionalInfo as SenderPAdditionalInfo,  \nu.datarow as SenderDatarow,  \nu.userrow as SenderUserrow,  \nu.pagerow as SenderPagerow\n, CAST(CASE WHEN SUBSTRING(e.[Recipient], CHARINDEX(''@'', e.[Recipient]), LEN(e.[Recipient]))  NOT IN (SELECT EmailDomain FROM Internal_email_domains) THEN 1 ELSE 0 END AS BIT) as IsExternalEmail \nFROM ', pipeline().parameters.emails_table_name, ' e  JOIN ', pipeline().parameters.users_table_name, ' u \non e.[From] = u.mail AND u.mail is not null;')}",
+                                    "type": "Expression"
+                                },
+                                "queryTimeout": "02:00:00",
+                                "partitionOption": "None"
+                            },
+                            "sink": {
+                                "type": "AzureSqlSink",
+                                "preCopyScript": {
+                                    "value": "@{concat('TRUNCATE TABLE ',pipeline().parameters.augmented_emails_table_name)}",
+                                    "type": "Expression"
+                                },
+                                "disableMetricsCollection": false
+                            },
+                            "enableStaging": false,
+                            "translator": {
+                                "type": "TabularTranslator",
+                                "mappings": [
+                                    {
+                                        "source": {
+                                            "name": "Id",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        },
+                                        "sink": {
+                                            "name": "Id",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "CreatedDateTime",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        },
+                                        "sink": {
+                                            "name": "CreatedDateTime",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "LastModifiedDateTime",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        },
+                                        "sink": {
+                                            "name": "LastModifiedDateTime",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "InternetMessageId",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        },
+                                        "sink": {
+                                            "name": "InternetMessageId",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "Subject",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        },
+                                        "sink": {
+                                            "name": "Subject",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "IsReadReceiptRequested",
+                                            "type": "Boolean",
+                                            "physicalType": "bit"
+                                        },
+                                        "sink": {
+                                            "name": "IsReadReceiptRequested",
+                                            "type": "Boolean",
+                                            "physicalType": "bit"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "IsRead",
+                                            "type": "Boolean",
+                                            "physicalType": "bit"
+                                        },
+                                        "sink": {
+                                            "name": "IsRead",
+                                            "type": "Boolean",
+                                            "physicalType": "bit"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "IsDraft",
+                                            "type": "Boolean",
+                                            "physicalType": "bit"
+                                        },
+                                        "sink": {
+                                            "name": "IsDraft",
+                                            "type": "Boolean",
+                                            "physicalType": "bit"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "WebLink",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        },
+                                        "sink": {
+                                            "name": "WebLink",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "Sender",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        },
+                                        "sink": {
+                                            "name": "Sender",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "Sender_Name",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        },
+                                        "sink": {
+                                            "name": "Sender_Name",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "From",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        },
+                                        "sink": {
+                                            "name": "From",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "From_Name",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        },
+                                        "sink": {
+                                            "name": "From_Name",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "ContentType",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        },
+                                        "sink": {
+                                            "name": "ContentType",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "Content",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        },
+                                        "sink": {
+                                            "name": "Content",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "Recipient",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        },
+                                        "sink": {
+                                            "name": "Recipient",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "ODataType",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        },
+                                        "sink": {
+                                            "name": "ODataType",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "emai_puser",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        },
+                                        "sink": {
+                                            "name": "emai_puser",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "email_ptenant",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        },
+                                        "sink": {
+                                            "name": "email_ptenant",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "email_datarow",
+                                            "type": "Int64",
+                                            "physicalType": "bigint"
+                                        },
+                                        "sink": {
+                                            "name": "email_datarow",
+                                            "type": "Int64",
+                                            "physicalType": "bigint"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "email_userrow",
+                                            "type": "Int64",
+                                            "physicalType": "bigint"
+                                        },
+                                        "sink": {
+                                            "name": "email_userrow",
+                                            "type": "Int64",
+                                            "physicalType": "bigint"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "email_pagerow",
+                                            "type": "Int64",
+                                            "physicalType": "bigint"
+                                        },
+                                        "sink": {
+                                            "name": "email_pagerow",
+                                            "type": "Int64",
+                                            "physicalType": "bigint"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "SenderAboutMe",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        },
+                                        "sink": {
+                                            "name": "SenderAboutMe",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "SenderBirthday",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        },
+                                        "sink": {
+                                            "name": "SenderBirthday",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "SenderHireDate",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        },
+                                        "sink": {
+                                            "name": "SenderHireDate",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "SenderMySite",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        },
+                                        "sink": {
+                                            "name": "SenderMySite",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "SenderPreferredName",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        },
+                                        "sink": {
+                                            "name": "SenderPreferredName",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "SenderAccountEnabled",
+                                            "type": "Boolean",
+                                            "physicalType": "bit"
+                                        },
+                                        "sink": {
+                                            "name": "SenderAccountEnabled",
+                                            "type": "Boolean",
+                                            "physicalType": "bit"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "SenderCity",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        },
+                                        "sink": {
+                                            "name": "SenderCity",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "SenderCompanyName",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        },
+                                        "sink": {
+                                            "name": "SenderCompanyName",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "SenderCountry",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        },
+                                        "sink": {
+                                            "name": "SenderCountry",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "SenderCreatedDateTime",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        },
+                                        "sink": {
+                                            "name": "SenderCreatedDateTime",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "SenderDepartment",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        },
+                                        "sink": {
+                                            "name": "SenderDepartment",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "SenderDisplayName",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        },
+                                        "sink": {
+                                            "name": "SenderDisplayName",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "SenderGivenName",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        },
+                                        "sink": {
+                                            "name": "SenderGivenName",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "SenderId",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        },
+                                        "sink": {
+                                            "name": "SenderId",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "SenderJobTitle",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        },
+                                        "sink": {
+                                            "name": "SenderJobTitle",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "SenderMail",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        },
+                                        "sink": {
+                                            "name": "SenderMail",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "SenderOfficeLocation",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        },
+                                        "sink": {
+                                            "name": "SenderOfficeLocation",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "SenderOnPremisesImmutableId",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        },
+                                        "sink": {
+                                            "name": "SenderOnPremisesImmutableId",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "SenderPostalCode",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        },
+                                        "sink": {
+                                            "name": "SenderPostalCode",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "SenderPreferredLanguage",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        },
+                                        "sink": {
+                                            "name": "SenderPreferredLanguage",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "SenderState",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        },
+                                        "sink": {
+                                            "name": "SenderState",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "SenderStreetAddress",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        },
+                                        "sink": {
+                                            "name": "SenderStreetAddress",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "SenderSurname",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        },
+                                        "sink": {
+                                            "name": "SenderSurname",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "SenderUsageLocation",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        },
+                                        "sink": {
+                                            "name": "SenderUsageLocation",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "SenderUserPrincipalName",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        },
+                                        "sink": {
+                                            "name": "SenderUserPrincipalName",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "SenderUserType",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        },
+                                        "sink": {
+                                            "name": "SenderUserType",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "SenderPuser",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        },
+                                        "sink": {
+                                            "name": "SenderPuser",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "SenderPtenant",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        },
+                                        "sink": {
+                                            "name": "SenderPtenant",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "SenderPAdditionalInfo",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        },
+                                        "sink": {
+                                            "name": "SenderPAdditionalInfo",
+                                            "type": "String",
+                                            "physicalType": "varchar"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "SenderDatarow",
+                                            "type": "Int64",
+                                            "physicalType": "bigint"
+                                        },
+                                        "sink": {
+                                            "name": "SenderDatarow",
+                                            "type": "Int64",
+                                            "physicalType": "bigint"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "SenderUserrow",
+                                            "type": "Int64",
+                                            "physicalType": "bigint"
+                                        },
+                                        "sink": {
+                                            "name": "SenderUserrow",
+                                            "type": "Int64",
+                                            "physicalType": "bigint"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "SenderPagerow",
+                                            "type": "Int64",
+                                            "physicalType": "bigint"
+                                        },
+                                        "sink": {
+                                            "name": "SenderPagerow",
+                                            "type": "Int64",
+                                            "physicalType": "bigint"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "IsExternalEmail",
+                                            "type": "Boolean",
+                                            "physicalType": "bit"
+                                        },
+                                        "sink": {
+                                            "name": "IsExternalEmail",
+                                            "type": "Boolean",
+                                            "physicalType": "bit"
+                                        }
+                                    }
+                                ],
+                                "typeConversion": true,
+                                "typeConversionSettings": {
+                                    "allowDataTruncation": true,
+                                    "treatBooleanAsNumber": false
+                                }
+                            }
+                        },
+                        "inputs": [
+                            {
+                                "referenceName": "DedicatedSqlPoolDB",
+                                "type": "DatasetReference"
+                            }
+                        ],
+                        "outputs": [
+                            {
+                                "referenceName": "AugmentedEmailsTableDedicatedPool",
+                                "type": "DatasetReference",
+                                "parameters": {
+                                    "augmented_emails_table_name": {
+                                        "value": "@pipeline().parameters.augmented_emails_table_name",
+                                        "type": "Expression"
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                ],
+                "parameters": {
+                    "augmented_emails_table_name": {
+                        "type": "string"
+                    },
+                    "emails_table_name": {
+                        "type": "string"
+                    },
+                    "users_table_name": {
+                        "type": "string"
+                    }
+                },
+                "annotations": [],
+                "lastPublishTime": "2021-06-22T13:07:00Z"
+            },
+            "type": "Microsoft.Synapse/workspaces/pipelines"
+        },
+        {
+            "name": "RawUsersParquet",
+            "properties": {
+                "linkedServiceName": {
+                    "referenceName": "blobstorage_via_sp_linkedservice",
+                    "type": "LinkedServiceReference"
+                },
+                "annotations": [],
+                "type": "Parquet",
+                "typeProperties": {
+                    "location": {
+                        "type": "AzureBlobStorageLocation",
+                        "folderPath": "m365_users_parquet",
+                        "container": "mgdc101-employee-profiles"
+                    },
+                    "compressionCodec": "snappy"
+                },
+                "schema": []
+            },
+            "type": "Microsoft.Synapse/workspaces/datasets"
+        },
+        {
+            "name": "M365UsersTableDedicatedSQLdb",
+            "properties": {
+                "linkedServiceName": {
+                    "referenceName": "SynapseDedicateSqlPool",
+                    "type": "LinkedServiceReference"
+                },
+                "parameters": {
+                    "users_table_name": {
+                        "type": "string"
+                    }
+                },
+                "annotations": [],
+                "type": "AzureSqlTable",
+                "schema": [],
+                "typeProperties": {
+                    "schema": "dbo",
+                    "table": {
+                        "value": "@dataset().users_table_name",
+                        "type": "Expression"
+                    }
+                }
+            },
+            "type": "Microsoft.Synapse/workspaces/datasets"
+        },
+        {
+            "name": "M365UsersProfileJson",
+            "properties": {
+                "linkedServiceName": {
+                    "referenceName": "blobstorage_via_sp_linkedservice",
+                    "type": "LinkedServiceReference"
+                },
+                "annotations": [],
+                "type": "Json",
+                "typeProperties": {
+                    "location": {
+                        "type": "AzureBlobStorageLocation",
+                        "folderPath": "m365_users_json",
+                        "container": "mgdc101-employee-profiles"
+                    }
+                },
+                "schema": {}
+            },
+            "type": "Microsoft.Synapse/workspaces/datasets"
+        },
+        {
+            "name": "M365UserProfileBlob",
+            "properties": {
+                "linkedServiceName": {
+                    "referenceName": "blobstorage_via_sp_linkedservice",
+                    "type": "LinkedServiceReference"
+                },
+                "annotations": [],
+                "type": "Binary",
+                "typeProperties": {
+                    "location": {
+                        "type": "AzureBlobStorageLocation",
+                        "folderPath": "m365_users_json",
+                        "container": "mgdc101-employee-profiles"
+                    }
+                }
+            },
+            "type": "Microsoft.Synapse/workspaces/datasets"
+        },
+        {
+            "name": "M365ToRecipientsEmailsParquet",
+            "properties": {
+                "linkedServiceName": {
+                    "referenceName": "blobstorage_via_sp_linkedservice",
+                    "type": "LinkedServiceReference"
+                },
+                "annotations": [],
+                "type": "Parquet",
+                "typeProperties": {
+                    "location": {
+                        "type": "AzureBlobStorageLocation",
+                        "fileName": "M365ToRecipientsEmailsParquet.parquet",
+                        "folderPath": "m365_emails_parquet_raw",
+                        "container": "mgdc101-emails"
+                    },
+                    "compressionCodec": "snappy"
+                },
+                "schema": [
+                    {
+                        "name": "Recipient",
+                        "type": "UTF8"
+                    },
+                    {
+                        "name": "Id",
+                        "type": "UTF8"
+                    },
+                    {
+                        "name": "CreatedDateTime",
+                        "type": "UTF8"
+                    },
+                    {
+                        "name": "LastModifiedDateTime",
+                        "type": "UTF8"
+                    },
+                    {
+                        "name": "InternetMessageId",
+                        "type": "UTF8"
+                    },
+                    {
+                        "name": "Subject",
+                        "type": "UTF8"
+                    },
+                    {
+                        "name": "IsReadReceiptRequested",
+                        "type": "BOOLEAN"
+                    },
+                    {
+                        "name": "IsRead",
+                        "type": "BOOLEAN"
+                    },
+                    {
+                        "name": "IsDraft",
+                        "type": "BOOLEAN"
+                    },
+                    {
+                        "name": "WebLink",
+                        "type": "UTF8"
+                    },
+                    {
+                        "name": "Sender_Name",
+                        "type": "UTF8"
+                    },
+                    {
+                        "name": "Sender",
+                        "type": "UTF8"
+                    },
+                    {
+                        "name": "From_Name",
+                        "type": "UTF8"
+                    },
+                    {
+                        "name": "From",
+                        "type": "UTF8"
+                    },
+                    {
+                        "name": "ContentType",
+                        "type": "UTF8"
+                    },
+                    {
+                        "name": "Content",
+                        "type": "UTF8"
+                    },
+                    {
+                        "name": "ODataType",
+                        "type": "UTF8"
+                    },
+                    {
+                        "name": "puser",
+                        "type": "UTF8"
+                    },
+                    {
+                        "name": "ptenant",
+                        "type": "UTF8"
+                    },
+                    {
+                        "name": "datarow",
+                        "type": "INT64"
+                    },
+                    {
+                        "name": "userrow",
+                        "type": "INT64"
+                    },
+                    {
+                        "name": "pagerow",
+                        "type": "INT64"
+                    }
+                ]
+            },
+            "type": "Microsoft.Synapse/workspaces/datasets"
+        },
+        {
+            "name": "M365EmailsTableDedicatedSQLdb",
+            "properties": {
+                "linkedServiceName": {
+                    "referenceName": "SynapseDedicateSqlPool",
+                    "type": "LinkedServiceReference"
+                },
+                "parameters": {
+                    "emails_table_name": {
+                        "type": "string"
+                    }
+                },
+                "annotations": [],
+                "type": "AzureSqlTable",
+                "schema": [],
+                "typeProperties": {
+                    "schema": "dbo",
+                    "table": {
+                        "value": "@dataset().emails_table_name",
+                        "type": "Expression"
+                    }
+                }
+            },
+            "type": "Microsoft.Synapse/workspaces/datasets"
+        },
+        {
+            "name": "M365EmailsParquet",
+            "properties": {
+                "linkedServiceName": {
+                    "referenceName": "blobstorage_via_sp_linkedservice",
+                    "type": "LinkedServiceReference"
+                },
+                "annotations": [],
+                "type": "Parquet",
+                "typeProperties": {
+                    "location": {
+                        "type": "AzureBlobStorageLocation",
+                        "folderPath": "m365_emails_parquet_raw",
+                        "container": "mgdc101-emails"
+                    },
+                    "compressionCodec": "snappy"
+                },
+                "schema": []
+            },
+            "type": "Microsoft.Synapse/workspaces/datasets"
+        },
+        {
+            "name": "M365EmailsJson",
+            "properties": {
+                "linkedServiceName": {
+                    "referenceName": "blobstorage_via_sp_linkedservice",
+                    "type": "LinkedServiceReference"
+                },
+                "annotations": [],
+                "type": "Json",
+                "typeProperties": {
+                    "location": {
+                        "type": "AzureBlobStorageLocation",
+                        "folderPath": "m365_emails_json",
+                        "container": "mgdc101-emails"
+                    }
+                },
+                "schema": {}
+            },
+            "type": "Microsoft.Synapse/workspaces/datasets"
+        },
+        {
+            "name": "M365EmailsBlob",
+            "properties": {
+                "linkedServiceName": {
+                    "referenceName": "blobstorage_via_sp_linkedservice",
+                    "type": "LinkedServiceReference"
+                },
+                "annotations": [],
+                "type": "Binary",
+                "typeProperties": {
+                    "location": {
+                        "type": "AzureBlobStorageLocation",
+                        "folderPath": "m365_emails_json",
+                        "container": "mgdc101-emails"
+                    }
+                }
+            },
+            "type": "Microsoft.Synapse/workspaces/datasets"
+        },
+        {
+            "name": "M365CcRecipientsEmailsParquet",
+            "properties": {
+                "linkedServiceName": {
+                    "referenceName": "blobstorage_via_sp_linkedservice",
+                    "type": "LinkedServiceReference"
+                },
+                "annotations": [],
+                "type": "Parquet",
+                "typeProperties": {
+                    "location": {
+                        "type": "AzureBlobStorageLocation",
+                        "fileName": "M365CcRecipientsEmailsParquet.parquet",
+                        "folderPath": "m365_emails_parquet_raw",
+                        "container": "mgdc101-emails"
+                    },
+                    "compressionCodec": "snappy"
+                },
+                "schema": [
+                    {
+                        "name": "Recipient",
+                        "type": "UTF8"
+                    },
+                    {
+                        "name": "Id",
+                        "type": "UTF8"
+                    },
+                    {
+                        "name": "CreatedDateTime",
+                        "type": "UTF8"
+                    },
+                    {
+                        "name": "LastModifiedDateTime",
+                        "type": "UTF8"
+                    },
+                    {
+                        "name": "InternetMessageId",
+                        "type": "UTF8"
+                    },
+                    {
+                        "name": "Subject",
+                        "type": "UTF8"
+                    },
+                    {
+                        "name": "IsReadReceiptRequested",
+                        "type": "BOOLEAN"
+                    },
+                    {
+                        "name": "IsRead",
+                        "type": "BOOLEAN"
+                    },
+                    {
+                        "name": "IsDraft",
+                        "type": "BOOLEAN"
+                    },
+                    {
+                        "name": "WebLink",
+                        "type": "UTF8"
+                    },
+                    {
+                        "name": "Sender_Name",
+                        "type": "UTF8"
+                    },
+                    {
+                        "name": "Sender",
+                        "type": "UTF8"
+                    },
+                    {
+                        "name": "From_Name",
+                        "type": "UTF8"
+                    },
+                    {
+                        "name": "From",
+                        "type": "UTF8"
+                    },
+                    {
+                        "name": "ContentType",
+                        "type": "UTF8"
+                    },
+                    {
+                        "name": "Content",
+                        "type": "UTF8"
+                    },
+                    {
+                        "name": "ODataType",
+                        "type": "UTF8"
+                    },
+                    {
+                        "name": "puser",
+                        "type": "UTF8"
+                    },
+                    {
+                        "name": "ptenant",
+                        "type": "UTF8"
+                    },
+                    {
+                        "name": "datarow",
+                        "type": "INT64"
+                    },
+                    {
+                        "name": "userrow",
+                        "type": "INT64"
+                    },
+                    {
+                        "name": "pagerow",
+                        "type": "INT64"
+                    }
+                ]
+            },
+            "type": "Microsoft.Synapse/workspaces/datasets"
+        },
+        {
+            "name": "M365BccRecipientsEmailsParquet",
+            "properties": {
+                "linkedServiceName": {
+                    "referenceName": "blobstorage_via_sp_linkedservice",
+                    "type": "LinkedServiceReference"
+                },
+                "annotations": [],
+                "type": "Parquet",
+                "typeProperties": {
+                    "location": {
+                        "type": "AzureBlobStorageLocation",
+                        "fileName": "M365BccRecipientsEmailsParquet.parquet",
+                        "folderPath": "m365_emails_parquet_raw",
+                        "container": "mgdc101-emails"
+                    },
+                    "compressionCodec": "snappy"
+                },
+                "schema": [
+                    {
+                        "name": "Recipient",
+                        "type": "UTF8"
+                    },
+                    {
+                        "name": "Id",
+                        "type": "UTF8"
+                    },
+                    {
+                        "name": "CreatedDateTime",
+                        "type": "UTF8"
+                    },
+                    {
+                        "name": "LastModifiedDateTime",
+                        "type": "UTF8"
+                    },
+                    {
+                        "name": "InternetMessageId",
+                        "type": "UTF8"
+                    },
+                    {
+                        "name": "Subject",
+                        "type": "UTF8"
+                    },
+                    {
+                        "name": "IsReadReceiptRequested",
+                        "type": "BOOLEAN"
+                    },
+                    {
+                        "name": "IsRead",
+                        "type": "BOOLEAN"
+                    },
+                    {
+                        "name": "IsDraft",
+                        "type": "BOOLEAN"
+                    },
+                    {
+                        "name": "WebLink",
+                        "type": "UTF8"
+                    },
+                    {
+                        "name": "Sender_Name",
+                        "type": "UTF8"
+                    },
+                    {
+                        "name": "Sender",
+                        "type": "UTF8"
+                    },
+                    {
+                        "name": "From_Name",
+                        "type": "UTF8"
+                    },
+                    {
+                        "name": "From",
+                        "type": "UTF8"
+                    },
+                    {
+                        "name": "ContentType",
+                        "type": "UTF8"
+                    },
+                    {
+                        "name": "Content",
+                        "type": "UTF8"
+                    },
+                    {
+                        "name": "ODataType",
+                        "type": "UTF8"
+                    },
+                    {
+                        "name": "puser",
+                        "type": "UTF8"
+                    },
+                    {
+                        "name": "ptenant",
+                        "type": "UTF8"
+                    },
+                    {
+                        "name": "datarow",
+                        "type": "INT64"
+                    },
+                    {
+                        "name": "userrow",
+                        "type": "INT64"
+                    },
+                    {
+                        "name": "pagerow",
+                        "type": "INT64"
+                    }
+                ]
+            },
+            "type": "Microsoft.Synapse/workspaces/datasets"
+        },
+        {
+            "name": "M365_User_Profile",
+            "properties": {
+                "linkedServiceName": {
+                    "referenceName": "office365_linkedservice",
+                    "type": "LinkedServiceReference"
+                },
+                "annotations": [],
+                "type": "Office365Table",
+                "schema": [],
+                "typeProperties": {
+                    "tableName": "BasicDataSet_v0.User_v1"
+                }
+            },
+            "type": "Microsoft.Synapse/workspaces/datasets"
+        },
+        {
+            "name": "M365_Emails",
+            "properties": {
+                "linkedServiceName": {
+                    "referenceName": "office365_linkedservice",
+                    "type": "LinkedServiceReference"
+                },
+                "annotations": [],
+                "type": "Office365Table",
+                "schema": [],
+                "typeProperties": {
+                    "tableName": "BasicDataSet_v0.Message_v0"
+                }
+            },
+            "type": "Microsoft.Synapse/workspaces/datasets"
+        },
+        {
+            "name": "DedicatedSqlPoolDB",
+            "properties": {
+                "linkedServiceName": {
+                    "referenceName": "SynapseDedicateSqlPool",
+                    "type": "LinkedServiceReference"
+                },
+                "annotations": [],
+                "type": "AzureSqlTable",
+                "schema": []
+            },
+            "type": "Microsoft.Synapse/workspaces/datasets"
+        },
+        {
+            "name": "AugmentedEmailsTableDedicatedPool",
+            "properties": {
+                "linkedServiceName": {
+                    "referenceName": "SynapseDedicateSqlPool",
+                    "type": "LinkedServiceReference"
+                },
+                "parameters": {
+                    "augmented_emails_table_name": {
+                        "type": "string"
+                    }
+                },
+                "annotations": [],
+                "type": "AzureSqlTable",
+                "schema": [],
+                "typeProperties": {
+                    "schema": "dbo",
+                    "table": {
+                        "value": "@dataset().augmented_emails_table_name",
+                        "type": "Expression"
+                    }
+                }
+            },
+            "type": "Microsoft.Synapse/workspaces/datasets"
+        },
+        {
+            "name": "SynapseDedicateSqlPool",
+            "type": "Microsoft.Synapse/workspaces/linkedservices",
+            "properties": {
+                "annotations": [],
+                "type": "AzureSqlDatabase",
+                "typeProperties": {
+                    "connectionString": "Integrated Security=False;Encrypt=True;Connection Timeout=30;Data Source=gdc-synapse.sql.azuresynapse.net;Initial Catalog=GDCdedicatedSQLpool"
+                },
+                "connectVia": {
+                    "referenceName": "AutoResolveIntegrationRuntime",
+                    "type": "IntegrationRuntimeReference"
+                }
+            }
+        },
+        {
+            "name": "office365_linkedservice",
+            "type": "Microsoft.Synapse/workspaces/linkedservices",
+            "properties": {
+                "annotations": [],
+                "type": "Office365",
+                "typeProperties": {
+                    "office365TenantId": "d26bf63a-a52f-436a-bf3b-531b1e378694",
+                    "servicePrincipalTenantId": "d26bf63a-a52f-436a-bf3b-531b1e378694",
+                    "servicePrincipalId": "481ebbf9-c2b2-4cad-9a8f-9d2fd3ccf56d",
+                    "servicePrincipalKey": {
+                        "type": "AzureKeyVaultSecret",
+                        "store": {
+                            "referenceName": "keyvault_linkedservice",
+                            "type": "LinkedServiceReference"
+                        },
+                        "secretName": "gdc-m365-reader-secret"
+                    }
+                },
+                "connectVia": {
+                    "referenceName": "AutoResolveIntegrationRuntime",
+                    "type": "IntegrationRuntimeReference"
+                }
+            }
+        },
+        {
+            "name": "keyvault_linkedservice",
+            "type": "Microsoft.Synapse/workspaces/linkedservices",
+            "properties": {
+                "annotations": [],
+                "type": "AzureKeyVault",
+                "typeProperties": {
+                    "baseUrl": "https://GdcBackend75ab71f.vault.azure.net/"
+                }
+            }
+        },
+        {
+            "name": "blobstorage_via_sp_linkedservice",
+            "type": "Microsoft.Synapse/workspaces/linkedservices",
+            "properties": {
+                "annotations": [],
+                "type": "AzureBlobStorage",
+                "typeProperties": {
+                    "serviceEndpoint": "https://gdcstorage75ab71f.blob.core.windows.net/",
+                    "tenant": "d26bf63a-a52f-436a-bf3b-531b1e378694",
+                    "servicePrincipalId": "89bdf823-ca3d-492d-afff-9df44edb5ebc",
+                    "servicePrincipalKey": {
+                        "type": "AzureKeyVaultSecret",
+                        "store": {
+                            "referenceName": "keyvault_linkedservice",
+                            "type": "LinkedServiceReference"
+                        },
+                        "secretName": "gdc-service-principal-secret"
+                    }
+                },
+                "connectVia": {
+                    "referenceName": "AutoResolveIntegrationRuntime",
+                    "type": "IntegrationRuntimeReference"
+                }
+            }
+        }
+    ]
+}
